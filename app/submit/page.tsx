@@ -5,15 +5,16 @@ import {Camera,CheckCircle2,FilePlus2,Loader2,Send,Trash2,UploadCloud} from "luc
 import {enhance,fileToImage,imageToCanvas} from "@/lib/scanner";
 
 type Attachment={id:string;file:File;preview:string};
-type PayloadFile={name:string;type:string;size:number;data:string};
 
 const MAX_FILES=5;
 const MAX_TOTAL_BYTES=10*1024*1024;
 const RECEIVER_URL="https://script.google.com/macros/s/AKfycbyYPWMNlTcbdwrt4F5j5HmG16Ayc322UK6UhOCv74Vuqs7c2QkY-66kBnGEmi1F4KObTg/exec";
 
 function id(){return crypto.randomUUID()}
-async function fileToDataUrl(file:Blob):Promise<string>{return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||""));r.onerror=()=>reject(r.error||new Error("File read failed"));r.readAsDataURL(file)})}
+function makeReference(){const d=new Date(),p=(n:number)=>String(n).padStart(2,"0");return `AKB${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${crypto.randomUUID().slice(0,6).toUpperCase()}`}
 async function cleanedImage(file:File):Promise<Blob>{const img=await fileToImage(file);const scale=Math.min(1,2200/Math.max(img.naturalWidth,img.naturalHeight));const canvas=imageToCanvas(img,Math.max(1,Math.round(img.naturalWidth*scale)),Math.max(1,Math.round(img.naturalHeight*scale)));const cleaned=enhance(canvas,"auto",65);return new Promise((resolve,reject)=>cleaned.toBlob(b=>b?resolve(b):reject(new Error("Image processing failed")),"image/jpeg",.9))}
+async function blobToBase64(blob:Blob):Promise<string>{const buffer=await blob.arrayBuffer(),bytes=new Uint8Array(buffer);let binary="";const chunk=0x8000;for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunk,bytes.length)));return btoa(binary)}
+async function postReceiver(body:Record<string,unknown>){const res=await fetch(RECEIVER_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)}),text=await res.text();let data:any=null;try{data=JSON.parse(text)}catch{}if(!res.ok)throw new Error(text||`HTTP ${res.status}`);if(!data?.ok)throw new Error(data?.error||"Receiver error");return data}
 
 export default function SubmitPage(){
   const camera=useRef<HTMLInputElement>(null),picker=useRef<HTMLInputElement>(null);
@@ -22,26 +23,29 @@ export default function SubmitPage(){
   const [status,setStatus]=useState<"idle"|"ok"|"error">("idle"),[statusText,setStatusText]=useState("");
   const totalBytes=useMemo(()=>files.reduce((n,x)=>n+x.file.size,0),[files]);
 
-  function addFiles(list:FileList|null){
-    if(!list?.length)return;setStatus("idle");
-    const incoming=Array.from(list).filter(f=>f.type.startsWith("image/")||f.type==="application/pdf"),room=Math.max(0,MAX_FILES-files.length),chosen=incoming.slice(0,room),next=[...files,...chosen.map(file=>({id:id(),file,preview:file.type.startsWith("image/")?URL.createObjectURL(file):""}))];
-    const size=next.reduce((n,x)=>n+x.file.size,0);
-    if(size>MAX_TOTAL_BYTES){chosen.forEach(f=>{const x=next.find(a=>a.file===f);if(x?.preview)URL.revokeObjectURL(x.preview)});setStatus("error");setStatusText("সব সংযুক্তি মিলিয়ে সর্বোচ্চ 10 MB রাখা যাবে।");return}
-    setFiles(next);if(incoming.length>room){setStatus("error");setStatusText(`সর্বোচ্চ ${MAX_FILES}টি ফাইল সংযুক্ত করা যাবে।`)}
-  }
+  function addFiles(list:FileList|null){if(!list?.length)return;setStatus("idle");const incoming=Array.from(list).filter(f=>f.type.startsWith("image/")||f.type==="application/pdf"),room=Math.max(0,MAX_FILES-files.length),chosen=incoming.slice(0,room),next=[...files,...chosen.map(file=>({id:id(),file,preview:file.type.startsWith("image/")?URL.createObjectURL(file):""}))];const size=next.reduce((n,x)=>n+x.file.size,0);if(size>MAX_TOTAL_BYTES){chosen.forEach(f=>{const x=next.find(a=>a.file===f);if(x?.preview)URL.revokeObjectURL(x.preview)});setStatus("error");setStatusText("সব সংযুক্তি মিলিয়ে সর্বোচ্চ 10 MB রাখা যাবে।");return}setFiles(next);if(incoming.length>room){setStatus("error");setStatusText(`সর্বোচ্চ ${MAX_FILES}টি ফাইল সংযুক্ত করা যাবে।`)}}
   function removeFile(fid:string){setFiles(v=>{const x=v.find(a=>a.id===fid);if(x?.preview)URL.revokeObjectURL(x.preview);return v.filter(a=>a.id!==fid)})}
+
   async function submit(e:React.FormEvent){
     e.preventDefault();
     if(!name.trim()||!mobile.trim()||!message.trim()){setStatus("error");setStatusText("নাম, মোবাইল নম্বর এবং বক্তব্য পূরণ করুন।");return}
     if(!files.length){setStatus("error");setStatusText("কমপক্ষে একটি ছবি বা PDF সংযুক্ত করুন।");return}
     setBusy(true);setStatus("idle");setStatusText("");
     try{
-      const payloadFiles:PayloadFile[]=[];
-      for(const item of files){const source=clean&&item.file.type.startsWith("image/")?await cleanedImage(item.file):item.file;payloadFiles.push({name:clean&&item.file.type.startsWith("image/")?item.file.name.replace(/\.[^.]+$/,"")+"-clean.jpg":item.file.name,type:source.type||item.file.type||"application/octet-stream",size:source.size,data:await fileToDataUrl(source)})}
-      const payload={source:"AKB Scan",submittedAt:new Date().toISOString(),name:name.trim(),mobile:mobile.trim(),subject:subject.trim(),message:message.trim(),cleanAttachments:clean,files:payloadFiles};
-      const res=await fetch(RECEIVER_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)}),text=await res.text();
-      if(!res.ok)throw new Error(text||`HTTP ${res.status}`);let result:any=null;try{result=JSON.parse(text)}catch{}if(result&&result.ok===false)throw new Error(result.error||"Submission failed");
-      setStatus("ok");setStatusText("আপনার তথ্য সফলভাবে জমা হয়েছে।");setName("");setMobile("");setSubject("");setMessage("");files.forEach(x=>x.preview&&URL.revokeObjectURL(x.preview));setFiles([]);
+      const reference=makeReference();
+      const note=[`মোবাইল: ${mobile.trim()}`,subject.trim()?`বিষয়: ${subject.trim()}`:"",`বক্তব্য: ${message.trim()}`].filter(Boolean).join("\n");
+      const started=await postReceiver({action:"start",reference,name:name.trim(),note,options:{enhance:clean,extractText:true,autoSubject:true}});
+      const folderId=String(started.folderId||"");if(!folderId)throw new Error("Receiver folder তৈরি করতে পারেনি");
+      const fileUrls:string[]=[];
+      for(let i=0;i<files.length;i++){
+        setStatusText(`সংযুক্তি ${i+1}/${files.length} পাঠানো হচ্ছে...`);
+        const item=files[i],source=clean&&item.file.type.startsWith("image/")?await cleanedImage(item.file):item.file;
+        const fileName=clean&&item.file.type.startsWith("image/")?item.file.name.replace(/\.[^.]+$/,"")+"-clean.jpg":item.file.name;
+        const uploaded=await postReceiver({action:"upload",folderId,fileName,mimeType:source.type||item.file.type||"application/octet-stream",base64:await blobToBase64(source)});
+        if(uploaded.fileUrl)fileUrls.push(String(uploaded.fileUrl));
+      }
+      await postReceiver({action:"finish",reference,fileUrls});
+      setStatus("ok");setStatusText(`সফলভাবে জমা হয়েছে। রেফারেন্স: ${reference}`);setName("");setMobile("");setSubject("");setMessage("");files.forEach(x=>x.preview&&URL.revokeObjectURL(x.preview));setFiles([]);
     }catch(err){setStatus("error");setStatusText(err instanceof Error?err.message:"জমা দেওয়া যায়নি। আবার চেষ্টা করুন।")}finally{setBusy(false)}
   }
 
