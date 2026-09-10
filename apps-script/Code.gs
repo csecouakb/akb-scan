@@ -60,6 +60,9 @@ function doPost(e) {
             sheet.getRange(row, 12).setValue(msg);
           }
 
+          // Apply compact formatting after every value has been written.
+          // This prevents long OCR text/subject/error text from expanding the row.
+          SpreadsheetApp.flush();
           formatSubmissionRow(sheet, row);
           return reply({ ok: true });
         }
@@ -74,10 +77,10 @@ function doPost(e) {
 }
 
 function formatSubmissionRow(sheet, row) {
+  const range = sheet.getRange(row, 1, 1, 12);
+  range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  range.setVerticalAlignment("middle");
   sheet.setRowHeight(row, 28);
-  [5, 6, 7, 9, 12].forEach(function(col) {
-    sheet.getRange(row, col).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-  });
 }
 
 function normalizeOptions(o) {
