@@ -35,8 +35,8 @@ export function perspectiveCorrect(source: HTMLCanvasElement, p: Point[]): HTMLC
     const sy=Math.max(0,Math.min(source.height-1,p[0].y*iu*iv+p[1].y*u*iv+p[2].y*u*v+p[3].y*iu*v));
     const x0=Math.floor(sx),y0=Math.floor(sy),x1=Math.min(source.width-1,x0+1),y1=Math.min(source.height-1,y0+1),fx=sx-x0,fy=sy-y0,di=(y*w+x)*4;
     for(let channel=0;channel<3;channel++){
-      const a=src[(y0*source.width+x0)*4+channel]*(1-fx)+src[(y0*source.width+x1)*4+channel]*fx;
-      const b=src[(y1*source.width+x0)*4+channel]*(1-fx)+src[(y1*source.width+x1)*4+channel]*fx;
+      const a=src.data[(y0*source.width+x0)*4+channel]*(1-fx)+src.data[(y0*source.width+x1)*4+channel]*fx;
+      const b=src.data[(y1*source.width+x0)*4+channel]*(1-fx)+src.data[(y1*source.width+x1)*4+channel]*fx;
       im.data[di+channel]=a*(1-fy)+b*fy;
     }
     im.data[di+3]=255;
