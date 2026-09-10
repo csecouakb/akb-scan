@@ -51,6 +51,7 @@ function doPost(e) {
               const result = analyzeSubmissionFiles(fileUrls, options);
               if (result.subject) sheet.getRange(row, 6).setValue(result.subject);
               if (result.text) sheet.getRange(row, 7).setValue(result.text);
+              if (result.shortName) renameSubmissionFiles(fileUrls, result.shortName);
               sheet.getRange(row, 12).setValue("AI OK");
             }
           } catch (aiError) {
@@ -80,7 +81,11 @@ function formatSubmissionRow(sheet, row) {
 }
 
 function normalizeOptions(o) {
-  return { enhance: !!o.enhance, extractText: o.extractText !== false, autoSubject: o.autoSubject !== false };
+  return {
+    enhance: !!o.enhance,
+    extractText: o.extractText !== false,
+    autoSubject: o.autoSubject !== false
+  };
 }
 
 function optionLabel(o) {
@@ -102,79 +107,118 @@ function parseOptionLabel(label) {
 function analyzeSubmissionFiles(fileUrls, options) {
   const apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY Script Property পাওয়া যায়নি");
-  const model = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-3.5-flash";
 
+  const model = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-3.5-flash";
   const parts = [];
+
   for (const url of fileUrls || []) {
     const id = driveIdFromUrl(url);
     if (!id) continue;
+
     const file = DriveApp.getFileById(id);
     const blob = file.getBlob();
     const mime = blob.getContentType() || "application/octet-stream";
+
     if (!/^image\//i.test(mime) && mime !== "application/pdf") continue;
-    parts.push({ inlineData: { mimeType: mime, data: Utilities.base64Encode(blob.getBytes()) } });
+
+    parts.push({
+      inlineData: {
+        mimeType: mime,
+        data: Utilities.base64Encode(blob.getBytes())
+      }
+    });
   }
-  if (!parts.length) return { text: "", subject: "" };
+
+  if (!parts.length) return { text: "", subject: "", shortName: "" };
 
   const instruction = [
-    "এই সংযুক্ত নথি/ছবিগুলো থেকে দৃশ্যমান লেখা যতটা সম্ভব হুবহু তুলে দাও।",
-    "কোনো লেখা অনুমান করে বানাবে না। অস্পষ্ট হলে [অস্পষ্ট] লিখবে।",
-    "বাংলা লেখা বাংলাতেই রাখবে, ইংরেজি ইংরেজিতেই রাখবে।",
-    options.autoSubject ? "সব নথির মূল বিষয় দেখে সংক্ষিপ্ত একটি বাংলা বিষয় তৈরি করো।" : "subject খালি রাখো।",
-    "শুধু JSON ফেরত দাও এই shape-এ: {\"text\":\"...\",\"subject\":\"...\"}"
+    "একবারেই নিচের তিনটি কাজ করো। একই নথির জন্য আলাদা বিশ্লেষণ বা আলাদা উত্তর দেবে না।",
+    "১) সংযুক্ত নথি/ছবিগুলো থেকে দৃশ্যমান লেখা যতটা সম্ভব হুবহু তুলে দাও। কোনো লেখা অনুমান করে বানাবে না। অস্পষ্ট হলে [অস্পষ্ট] লিখবে। বাংলা লেখা বাংলাতেই এবং ইংরেজি ইংরেজিতেই রাখবে।",
+    options.autoSubject
+      ? "২) সব নথির মূল বিষয় দেখে সংক্ষিপ্ত ও অর্থবহ একটি বাংলা subject তৈরি করো।"
+      : "২) subject খালি রাখো।",
+    "৩) subject-এর ভিত্তিতে আরও ছোট, পরিষ্কার ও file-name উপযোগী একটি shortName তৈরি করো। সাধারণত 3-8টি শব্দের মধ্যে রাখবে। extension লিখবে না। / \\ : * ? \" < > | ব্যবহার করবে না।",
+    options.extractText ? "text পূর্ণ OCR text হবে।" : "text খালি রাখো।",
+    "শুধু JSON ফেরত দাও এই shape-এ: {\"text\":\"...\",\"subject\":\"...\",\"shortName\":\"...\"}"
   ].join("\n");
+
   parts.unshift({ text: instruction });
 
-  const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(apiKey);
+  const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" +
+    encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(apiKey);
+
   const payload = {
     contents: [{ role: "user", parts: parts }],
-    generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json"
+    }
   };
 
-  const response = fetchGeminiWithRetry(endpoint, payload);
+  // Deliberately only ONE Gemini request per submission to save quota/credits.
+  const response = UrlFetchApp.fetch(endpoint, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
   const code = response.getResponseCode();
   const body = response.getContentText();
-  if (code < 200 || code >= 300) throw new Error("Gemini HTTP " + code + ": " + body.slice(0, 500));
+
+  if (code < 200 || code >= 300) {
+    throw new Error("Gemini HTTP " + code + ": " + body.slice(0, 500));
+  }
 
   const parsed = JSON.parse(body);
-  const text = parsed && parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts && parsed.candidates[0].content.parts[0] && parsed.candidates[0].content.parts[0].text;
+  const text = parsed && parsed.candidates && parsed.candidates[0] &&
+    parsed.candidates[0].content && parsed.candidates[0].content.parts &&
+    parsed.candidates[0].content.parts[0] && parsed.candidates[0].content.parts[0].text;
+
   if (!text) throw new Error("Gemini কোনো result দেয়নি");
 
   let result;
   try {
     result = JSON.parse(text);
   } catch (_) {
-    const cleaned = String(text).replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+    const cleaned = String(text)
+      .replace(/^```json\s*/i, "")
+      .replace(/```$/i, "")
+      .trim();
     result = JSON.parse(cleaned);
   }
+
   return {
     text: options.extractText ? String(result.text || "") : "",
-    subject: options.autoSubject ? String(result.subject || "") : ""
+    subject: options.autoSubject ? String(result.subject || "") : "",
+    shortName: safeShortName(result.shortName || result.subject || "Document")
   };
 }
 
-function fetchGeminiWithRetry(endpoint, payload) {
-  const waits = [0, 2000, 5000];
-  let response;
+function renameSubmissionFiles(fileUrls, shortName) {
+  const urls = fileUrls || [];
+  const base = safeShortName(shortName || "Document");
 
-  for (let attempt = 0; attempt < waits.length; attempt++) {
-    if (waits[attempt] > 0) Utilities.sleep(waits[attempt]);
+  urls.forEach(function(url, index) {
+    const id = driveIdFromUrl(url);
+    if (!id) return;
 
-    response = UrlFetchApp.fetch(endpoint, {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
+    const file = DriveApp.getFileById(id);
+    const oldName = file.getName();
+    const dot = oldName.lastIndexOf(".");
+    const ext = dot > 0 ? oldName.slice(dot) : "";
+    const suffix = urls.length > 1 ? "_" + String(index + 1).padStart(2, "0") : "";
 
-    const code = response.getResponseCode();
-    const retryable = code === 429 || (code >= 500 && code <= 599);
+    file.setName(base + suffix + ext);
+  });
+}
 
-    if (!retryable) return response;
-    console.log("Gemini temporary HTTP " + code + ", attempt " + (attempt + 1) + " of " + waits.length);
-  }
-
-  return response;
+function safeShortName(value) {
+  return String(value || "Document")
+    .replace(/[\/:*?"<>|\x00-\x1F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "Document";
 }
 
 function driveIdFromUrl(url) {
@@ -184,5 +228,7 @@ function driveIdFromUrl(url) {
 }
 
 function safe(value) {
-  return String(value || "").replace(/[\/:*?"<>|\x00-\x1F]/g, "_").slice(0, 140) || "attachment";
+  return String(value || "")
+    .replace(/[\/:*?"<>|\x00-\x1F]/g, "_")
+    .slice(0, 140) || "attachment";
 }
