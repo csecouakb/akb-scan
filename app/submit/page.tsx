@@ -19,7 +19,8 @@ async function postReceiver(body:Record<string,unknown>){const res=await fetch(R
 export default function SubmitPage(){
   const camera=useRef<HTMLInputElement>(null),picker=useRef<HTMLInputElement>(null);
   const [name,setName]=useState(""),[mobile,setMobile]=useState(""),[subject,setSubject]=useState(""),[message,setMessage]=useState("");
-  const [clean,setClean]=useState(false),[files,setFiles]=useState<Attachment[]>([]),[busy,setBusy]=useState(false);
+  const [clean,setClean]=useState(false),[extractText,setExtractText]=useState(true),[autoSubject,setAutoSubject]=useState(true);
+  const [files,setFiles]=useState<Attachment[]>([]),[busy,setBusy]=useState(false);
   const [status,setStatus]=useState<"idle"|"ok"|"error">("idle"),[statusText,setStatusText]=useState("");
   const totalBytes=useMemo(()=>files.reduce((n,x)=>n+x.file.size,0),[files]);
 
@@ -34,7 +35,8 @@ export default function SubmitPage(){
     try{
       const reference=makeReference();
       const note=[`মোবাইল: ${mobile.trim()}`,subject.trim()?`বিষয়: ${subject.trim()}`:"",`বক্তব্য: ${message.trim()}`].filter(Boolean).join("\n");
-      const started=await postReceiver({action:"start",reference,name:name.trim(),note,options:{enhance:clean,extractText:true,autoSubject:true}});
+      const options={enhance:clean,extractText,autoSubject};
+      const started=await postReceiver({action:"start",reference,name:name.trim(),note,options});
       const folderId=String(started.folderId||"");if(!folderId)throw new Error("Receiver folder তৈরি করতে পারেনি");
       const fileUrls:string[]=[];
       for(let i=0;i<files.length;i++){
@@ -44,7 +46,8 @@ export default function SubmitPage(){
         const uploaded=await postReceiver({action:"upload",folderId,fileName,mimeType:source.type||item.file.type||"application/octet-stream",base64:await blobToBase64(source)});
         if(uploaded.fileUrl)fileUrls.push(String(uploaded.fileUrl));
       }
-      await postReceiver({action:"finish",reference,fileUrls});
+      setStatusText("শেষ ধাপ সম্পন্ন হচ্ছে...");
+      await postReceiver({action:"finish",reference,fileUrls,options});
       setStatus("ok");setStatusText(`সফলভাবে জমা হয়েছে। রেফারেন্স: ${reference}`);setName("");setMobile("");setSubject("");setMessage("");files.forEach(x=>x.preview&&URL.revokeObjectURL(x.preview));setFiles([]);
     }catch(err){setStatus("error");setStatusText(err instanceof Error?err.message:"জমা দেওয়া যায়নি। আবার চেষ্টা করুন।")}finally{setBusy(false)}
   }
@@ -59,7 +62,11 @@ export default function SubmitPage(){
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginTop:12}}><button type="button" onClick={()=>camera.current?.click()} style={actionButton}><Camera size={20}/> ক্যামেরা</button><button type="button" onClick={()=>picker.current?.click()} style={actionButton}><FilePlus2 size={20}/> ছবি / PDF</button></div>
       <input ref={camera} hidden type="file" accept="image/*" capture="environment" onChange={e=>{addFiles(e.target.files);e.currentTarget.value=""}}/><input ref={picker} hidden type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e=>{addFiles(e.target.files);e.currentTarget.value=""}}/>
       {files.length>0&&<div style={{display:"grid",gap:8,marginTop:14}}>{files.map((x,i)=><div key={x.id} style={{display:"grid",gridTemplateColumns:"52px 1fr auto",gap:10,alignItems:"center",padding:9,border:"1px solid #e5e7eb",borderRadius:12}}><div style={{width:52,height:52,borderRadius:8,overflow:"hidden",background:"#eef2f6",display:"grid",placeItems:"center"}}>{x.preview?<img src={x.preview} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<UploadCloud size={20}/>}</div><div style={{minWidth:0}}><b style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontSize:14}}>{i+1}. {x.file.name}</b><small style={{color:"#667085"}}>{(x.file.size/1024/1024).toFixed(2)} MB</small></div><button aria-label="সংযুক্তি মুছুন" type="button" onClick={()=>removeFile(x.id)} style={{border:0,background:"transparent",padding:8,cursor:"pointer",color:"#b42318"}}><Trash2 size={18}/></button></div>)}</div>}
-      <label style={{display:"flex",gap:10,alignItems:"flex-start",marginTop:15,padding:12,borderRadius:12,background:"#f7fafc",cursor:"pointer"}}><input type="checkbox" checked={clean} onChange={e=>setClean(e.target.checked)} style={{marginTop:3}}/><span><b>ছবি পরিষ্কার করে পাঠান</b><small style={{display:"block",color:"#667085",marginTop:3,lineHeight:1.5}}>ছবির background ও contrast scanner-এর মতো করার চেষ্টা করবে। PDF অপরিবর্তিত থাকবে।</small></span></label></section>
+      <div style={{display:"grid",gap:8,marginTop:15}}>
+        <Option checked={clean} onChange={setClean} title="ছবি পরিষ্কার করুন" text="ছবির background ও contrast scanner-এর মতো করার চেষ্টা করবে। PDF অপরিবর্তিত থাকবে।"/>
+        <Option checked={extractText} onChange={setExtractText} title="লেখা শনাক্ত করুন" text="সংযুক্ত নথি থেকে দৃশ্যমান লেখা তুলে Sheet-এ রাখার চেষ্টা করবে।"/>
+        <Option checked={autoSubject} onChange={setAutoSubject} title="বিষয় তৈরি করুন" text="নথির মূল বিষয় দেখে সংক্ষিপ্ত বাংলা বিষয় তৈরির চেষ্টা করবে।"/>
+      </div></section>
       {status!=="idle"&&<div role="status" style={{display:"flex",gap:9,alignItems:"flex-start",marginTop:18,padding:12,borderRadius:12,background:status==="ok"?"#ecfdf3":"#fff1f0",color:status==="ok"?"#067647":"#b42318"}}>{status==="ok"?<CheckCircle2 size={20}/>:null}<span>{statusText}</span></div>}
       <button type="submit" disabled={busy} style={{width:"100%",marginTop:20,border:0,borderRadius:13,padding:"14px 18px",fontWeight:800,fontSize:16,cursor:busy?"wait":"pointer",background:"#176b87",color:"white",display:"flex",alignItems:"center",justifyContent:"center",gap:9,opacity:busy?.72:1}}>{busy?<><Loader2 size={20}/> জমা হচ্ছে...</>:<><Send size={20}/> জমা দিন</>}</button>
       <p style={{textAlign:"center",color:"#98a2b3",fontSize:12,margin:"13px 0 0"}}>AKB Scan • Secure submission</p>
@@ -68,5 +75,6 @@ export default function SubmitPage(){
 }
 
 function Field({label,children}:{label:string,children:React.ReactNode}){return <label style={{display:"grid",gap:7,marginTop:14}}><b style={{fontSize:14}}>{label}</b>{children}</label>}
+function Option({checked,onChange,title,text}:{checked:boolean;onChange:(v:boolean)=>void;title:string;text:string}){return <label style={{display:"flex",gap:10,alignItems:"flex-start",padding:12,borderRadius:12,background:"#f7fafc",cursor:"pointer"}}><input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)} style={{marginTop:3}}/><span><b>{title}</b><small style={{display:"block",color:"#667085",marginTop:3,lineHeight:1.5}}>{text}</small></span></label>}
 const inputStyle:React.CSSProperties={width:"100%",boxSizing:"border-box",border:"1px solid #d0d5dd",borderRadius:11,padding:"12px 13px",font:"inherit",background:"#fff",outline:"none",color:"#18202a"};
 const actionButton:React.CSSProperties={border:"1px solid #cbd5e1",borderRadius:11,padding:"12px 14px",background:"white",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,color:"#344054"};
