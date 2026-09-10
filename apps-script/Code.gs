@@ -20,7 +20,7 @@ function doPost(e) {
       const sl = Math.max(1, sheet.getLastRow());
       sheet.appendRow([
         sl, new Date(), body.reference, body.name, body.note || "", "", "",
-        folder.getUrl(), "", optionLabel(options), "Receiving"
+        folder.getUrl(), "", optionLabel(options), "Receiving", ""
       ]);
       return reply({ ok: true, folderId: folder.getId(), folderUrl: folder.getUrl() });
     }
@@ -41,15 +41,20 @@ function doPost(e) {
           const fileUrls = body.fileUrls || [];
           sheet.getRange(row, 9).setValue(fileUrls.join("\n"));
           sheet.getRange(row, 11).setValue("Received");
+          sheet.getRange(row, 12).setValue("");
+
           try {
             const options = parseOptionLabel(String(values[i][9] || ""));
             if (options.extractText || options.autoSubject) {
               const result = analyzeSubmissionFiles(fileUrls, options);
               if (result.text) sheet.getRange(row, 6).setValue(result.text);
               if (result.subject) sheet.getRange(row, 7).setValue(result.subject);
+              sheet.getRange(row, 12).setValue("AI OK");
             }
           } catch (aiError) {
-            console.log("AI processing skipped/failed: " + String((aiError && aiError.message) || aiError));
+            const msg = String((aiError && aiError.message) || aiError);
+            console.log("AI processing skipped/failed: " + msg);
+            sheet.getRange(row, 12).setValue(msg);
           }
           return reply({ ok: true });
         }
