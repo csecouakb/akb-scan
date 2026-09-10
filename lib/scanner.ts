@@ -4,6 +4,13 @@ export type Point = { x: number; y: number };
 export const defaultCorners = (w: number, h: number): Point[] => [
   { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h },
 ];
+export function orderCorners(points:Point[]):Point[]{
+  if(points.length!==4)return points;
+  const sums=points.map(p=>p.x+p.y),diffs=points.map(p=>p.x-p.y);
+  const at=(values:number[],pick:"min"|"max")=>points[values.indexOf(pick==="min"?Math.min(...values):Math.max(...values))];
+  const ordered=[at(sums,"min"),at(diffs,"max"),at(sums,"max"),at(diffs,"min")];
+  return new Set(ordered).size===4?ordered.map(p=>({...p})):points;
+}
 export function detectDocumentCorners(canvas:HTMLCanvasElement):Point[]{const s=Math.min(1,700/Math.max(canvas.width,canvas.height)),w=Math.round(canvas.width*s),h=Math.round(canvas.height*s),c=imageToCanvas(canvas,w,h),d=c.getContext("2d",{willReadFrequently:true})!.getImageData(0,0,w,h).data,sx=new Float32Array(w),sy=new Float32Array(h);for(let y=2;y<h-2;y+=2)for(let x=2;x<w-2;x+=2){const i=(y*w+x)*4,j=i+8,k=((y+2)*w+x)*4,l=.299*d[i]+.587*d[i+1]+.114*d[i+2];sx[x]+=Math.abs(l-(.299*d[j]+.587*d[j+1]+.114*d[j+2]));sy[y]+=Math.abs(l-(.299*d[k]+.587*d[k+1]+.114*d[k+2]))}const best=(a:Float32Array,f:number,t:number)=>{let n=Math.floor(f);for(let i=Math.floor(f);i<Math.floor(t);i++)if(a[i]>a[n])n=i;return n},l=best(sx,w*.02,w*.35),r=best(sx,w*.65,w*.98),t=best(sy,h*.02,h*.35),b=best(sy,h*.65,h*.98);if(r-l<w*.35||b-t<h*.35)return defaultCorners(canvas.width,canvas.height);return[{x:l/s,y:t/s},{x:r/s,y:t/s},{x:r/s,y:b/s},{x:l/s,y:b/s}]}
 
 export async function fileToImage(file: Blob): Promise<HTMLImageElement> {
