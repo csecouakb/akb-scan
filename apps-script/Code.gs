@@ -60,8 +60,6 @@ function doPost(e) {
             sheet.getRange(row, 12).setValue(msg);
           }
 
-          // Apply compact formatting after every value has been written.
-          // This prevents long OCR text/subject/error text from expanding the row.
           SpreadsheetApp.flush();
           formatSubmissionRow(sheet, row);
           return reply({ ok: true });
@@ -81,6 +79,53 @@ function formatSubmissionRow(sheet, row) {
   range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   range.setVerticalAlignment("middle");
   sheet.setRowHeight(row, 28);
+}
+
+// Run this manually once from Apps Script to make all existing response rows compact.
+// It only changes formatting. It does NOT alter any existing response data.
+function fixOldResponses() {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("Responses");
+  if (!sheet) throw new Error('Sheet "Responses" পাওয়া যায়নি');
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const rowCount = lastRow - 1;
+  const range = sheet.getRange(2, 1, rowCount, 12);
+  range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  range.setVerticalAlignment("middle");
+  sheet.setRowHeights(2, rowCount, 28);
+  SpreadsheetApp.flush();
+}
+
+// Optional helper for old rows that were created while Subject/Text columns were reversed.
+// Set the row numbers first, then run manually. Do not run this for already-correct rows.
+function swapOldSubjectTextRows(startRow, endRow) {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("Responses");
+  if (!sheet) throw new Error('Sheet "Responses" পাওয়া যায়নি');
+
+  startRow = Number(startRow);
+  endRow = Number(endRow);
+  if (!startRow || !endRow || startRow < 2 || endRow < startRow) {
+    throw new Error("Valid startRow এবং endRow দিন");
+  }
+
+  const count = endRow - startRow + 1;
+  const range = sheet.getRange(startRow, 6, count, 2);
+  const values = range.getValues();
+
+  values.forEach(function(row) {
+    const oldCol6 = row[0];
+    row[0] = row[1];
+    row[1] = oldCol6;
+  });
+
+  range.setValues(values);
+  SpreadsheetApp.flush();
+
+  for (let row = startRow; row <= endRow; row++) {
+    formatSubmissionRow(sheet, row);
+  }
 }
 
 function normalizeOptions(o) {
