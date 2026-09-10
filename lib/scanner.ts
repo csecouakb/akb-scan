@@ -23,31 +23,16 @@ export async function fileToImage(file: Blob): Promise<HTMLImageElement> {
   } finally { URL.revokeObjectURL(url); }
 }
 
-function solve8(a: number[][], b: number[]) {
-  for (let i = 0; i < 8; i++) {
-    let m = i;
-    for (let j = i + 1; j < 8; j++) if (Math.abs(a[j][i]) > Math.abs(a[m][i])) m = j;
-    [a[i], a[m]] = [a[m], a[i]]; [b[i], b[m]] = [b[m], b[i]];
-    const d = a[i][i] || 1e-9;
-    for (let k = i; k < 8; k++) a[i][k] /= d; b[i] /= d;
-    for (let j = 0; j < 8; j++) if (j !== i) {
-      const f = a[j][i]; for (let k = i; k < 8; k++) a[j][k] -= f * a[i][k]; b[j] -= f * b[i];
-    }
-  }
-  return b;
-}
-
 export function perspectiveCorrect(source: HTMLCanvasElement, p: Point[]): HTMLCanvasElement {
   const top = Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y), bottom = Math.hypot(p[2].x-p[3].x,p[2].y-p[3].y);
   const left = Math.hypot(p[3].x-p[0].x,p[3].y-p[0].y), right = Math.hypot(p[2].x-p[1].x,p[2].y-p[1].y);
   const w = Math.max(1, Math.round(Math.max(top,bottom))), h = Math.max(1, Math.round(Math.max(left,right)));
-  const dst = [{x:0,y:0},{x:w-1,y:0},{x:w-1,y:h-1},{x:0,y:h-1}];
-  const A:number[][]=[], B:number[]=[];
-  for(let i=0;i<4;i++){const x=dst[i].x,y=dst[i].y,u=p[i].x,v=p[i].y;A.push([x,y,1,0,0,0,-u*x,-u*y]);B.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);B.push(v)}
-  const q=solve8(A,B), sctx=source.getContext("2d",{willReadFrequently:true})!, src=sctx.getImageData(0,0,source.width,source.height);
+  const sctx=source.getContext("2d",{willReadFrequently:true})!, src=sctx.getImageData(0,0,source.width,source.height);
   const out=document.createElement("canvas"); out.width=w;out.height=h;const ctx=out.getContext("2d")!, im=ctx.createImageData(w,h);
   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const z=q[6]*x+q[7]*y+1,sx=Math.max(0,Math.min(source.width-1,(q[0]*x+q[1]*y+q[2])/z)),sy=Math.max(0,Math.min(source.height-1,(q[3]*x+q[4]*y+q[5])/z));
+    const u=w===1?0:x/(w-1),v=h===1?0:y/(h-1),iu=1-u,iv=1-v;
+    const sx=Math.max(0,Math.min(source.width-1,p[0].x*iu*iv+p[1].x*u*iv+p[2].x*u*v+p[3].x*iu*v));
+    const sy=Math.max(0,Math.min(source.height-1,p[0].y*iu*iv+p[1].y*u*iv+p[2].y*u*v+p[3].y*iu*v));
     const x0=Math.floor(sx),y0=Math.floor(sy),x1=Math.min(source.width-1,x0+1),y1=Math.min(source.height-1,y0+1),fx=sx-x0,fy=sy-y0,di=(y*w+x)*4;
     for(let channel=0;channel<3;channel++){
       const a=src[(y0*source.width+x0)*4+channel]*(1-fx)+src[(y0*source.width+x1)*4+channel]*fx;
