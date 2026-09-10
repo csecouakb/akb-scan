@@ -19,17 +19,8 @@ function doPost(e) {
       const folder = root.createFolder(folderName);
       const sl = Math.max(1, sheet.getLastRow());
       sheet.appendRow([
-        sl,
-        new Date(),
-        body.reference,
-        body.name,
-        body.note || "",
-        "",
-        "",
-        folder.getUrl(),
-        "",
-        optionLabel(options),
-        "Receiving"
+        sl, new Date(), body.reference, body.name, body.note || "", "", "",
+        folder.getUrl(), "", optionLabel(options), "Receiving"
       ]);
       return reply({ ok: true, folderId: folder.getId(), folderUrl: folder.getUrl() });
     }
@@ -50,8 +41,6 @@ function doPost(e) {
           const fileUrls = body.fileUrls || [];
           sheet.getRange(row, 9).setValue(fileUrls.join("\n"));
           sheet.getRange(row, 11).setValue("Received");
-
-          // Best-effort AI processing. Submission remains Received even if AI fails.
           try {
             const options = parseOptionLabel(String(values[i][9] || ""));
             if (options.extractText || options.autoSubject) {
@@ -60,10 +49,8 @@ function doPost(e) {
               if (result.subject) sheet.getRange(row, 7).setValue(result.subject);
             }
           } catch (aiError) {
-            const msg = String((aiError && aiError.message) || aiError);
-            console.log("AI processing skipped/failed: " + msg);
+            console.log("AI processing skipped/failed: " + String((aiError && aiError.message) || aiError));
           }
-
           return reply({ ok: true });
         }
       }
@@ -77,11 +64,7 @@ function doPost(e) {
 }
 
 function normalizeOptions(o) {
-  return {
-    enhance: !!o.enhance,
-    extractText: o.extractText !== false,
-    autoSubject: o.autoSubject !== false
-  };
+  return { enhance: !!o.enhance, extractText: o.extractText !== false, autoSubject: o.autoSubject !== false };
 }
 
 function optionLabel(o) {
@@ -103,7 +86,7 @@ function parseOptionLabel(label) {
 function analyzeSubmissionFiles(fileUrls, options) {
   const apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY Script Property পাওয়া যায়নি");
-  const model = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-2.5-flash";
+  const model = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-3.5-flash";
 
   const parts = [];
   for (const url of fileUrls || []) {
@@ -113,12 +96,7 @@ function analyzeSubmissionFiles(fileUrls, options) {
     const blob = file.getBlob();
     const mime = blob.getContentType() || "application/octet-stream";
     if (!/^image\//i.test(mime) && mime !== "application/pdf") continue;
-    parts.push({
-      inlineData: {
-        mimeType: mime,
-        data: Utilities.base64Encode(blob.getBytes())
-      }
-    });
+    parts.push({ inlineData: { mimeType: mime, data: Utilities.base64Encode(blob.getBytes()) } });
   }
   if (!parts.length) return { text: "", subject: "" };
 
@@ -134,16 +112,10 @@ function analyzeSubmissionFiles(fileUrls, options) {
   const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(apiKey);
   const payload = {
     contents: [{ role: "user", parts: parts }],
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: "application/json"
-    }
+    generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
   };
   const response = UrlFetchApp.fetch(endpoint, {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
+    method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
   });
   const code = response.getResponseCode();
   const body = response.getContentText();
