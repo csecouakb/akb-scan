@@ -19,20 +19,6 @@ function normalizeOptions(o){return {enhance:!!o.enhance,extractText:o.extractTe
 function optionLabel(o){return JSON.stringify(o)}
 function formatSubmissionRow(s,row){s.getRange(row,1,1,12).setWrap(false).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setVerticalAlignment("middle");s.setRowHeightsForced(row,1,28)}
 function fixOldResponses(){const s=sheet(),n=s.getLastRow()-1;if(n<1)return;s.getRange(2,1,n,12).setWrap(false).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setVerticalAlignment("middle");s.setRowHeightsForced(2,n,28)}
-function repairOldSubjectText(){const s=sheet(),n=s.getLastRow()-1;if(n<1)return,r=s.getRange(2,6,n,2),v=r.getValues();v.forEach(x=>{const a=String(x[0]||"").trim(),b=String(x[1]||"").trim();if((a.length>=180||a.indexOf("\n")>=0)&&(!b||b.length<120)){x[1]=x[0];x[0]=b}});r.setValues(v);fixOldResponses()}
+function repairOldSubjectText(){const s=sheet(),n=s.getLastRow()-1;if(n<1)return;const r=s.getRange(2,6,n,2),v=r.getValues();v.forEach(x=>{const a=String(x[0]||"").trim(),b=String(x[1]||"").trim();if((a.length>=180||a.indexOf("\n")>=0)&&(!b||b.length<120)){x[1]=x[0];x[0]=b}});r.setValues(v);fixOldResponses()}
 function safeShortName(v){return String(v||"Document").replace(/[\/:*?"<>|\x00-\x1F]/g," ").replace(/\s+/g," ").trim().slice(0,80)||"Document"}
 function safe(v){return String(v||"").replace(/[\/:*?"<>|\x00-\x1F]/g,"_").slice(0,140)||"attachment"}
-[stdin]:22
-function repairOldSubjectText(){const s=sheet(),n=s.getLastRow()-1;if(n<1)return,r=s.getRange(2,6,n,2),v=r.getValues();v.forEach(x=>{const a=String(x[0]||"").trim(),b=String(x[1]||"").trim();if((a.length>=180||a.indexOf("\n")>=0)&&(!b||b.length<120)){x[1]=x[0];x[0]=b}});r.setValues(v);fixOldResponses()}
-                                                                                ^
-
-SyntaxError: Unexpected token ','
-    at wrapSafe (node:internal/modules/cjs/loader:1804:18)
-    at checkSyntax (node:internal/main/check_syntax:76:3)
-    at node:internal/main/check_syntax:45:5
-    at ReadStream.<anonymous> (node:internal/process/execution:205:5)
-    at ReadStream.emit (node:events:509:28)
-    at endReadableNT (node:internal/streams/readable:1736:12)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
-
-Node.js v24.19.0
