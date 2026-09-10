@@ -50,13 +50,16 @@ export function enhance(source: HTMLCanvasElement, filter: FilterName, strength=
   const scale=Math.max(12,Math.round(Math.min(w,h)/45)), gw=Math.ceil(w/scale),gh=Math.ceil(h/scale),light=new Float32Array(gw*gh),count=new Uint32Array(gw*gh);
   for(let y=0;y<h;y+=2)for(let x=0;x<w;x+=2){const i=(y*w+x)*4,g=(Math.floor(y/scale)*gw+Math.floor(x/scale));light[g]+=.299*d[i]+.587*d[i+1]+.114*d[i+2];count[g]++}
   for(let i=0;i<light.length;i++)light[i]/=count[i]||1;
+  // Smooth the illumination map before applying it. A nearest-cell map makes
+  // hard checkerboard patches visible on folded paper and strong shadows.
+  for(let pass=0;pass<3;pass++){const next=new Float32Array(light.length);for(let gy=0;gy<gh;gy++)for(let gx=0;gx<gw;gx++){let sum=0,n=0;for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){const xx=gx+ox,yy=gy+oy;if(xx>=0&&xx<gw&&yy>=0&&yy<gh){sum+=light[yy*gw+xx];n++}}next[gy*gw+gx]=sum/n}light.set(next)}
   const k=strength/100;
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4,g=Math.min(gh-1,Math.floor(y/scale))*gw+Math.min(gw-1,Math.floor(x/scale)),local=light[g]||220;let r=d[i],gg=d[i+1],b=d[i+2];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y*w+x)*4,gx=Math.min(gw-1,x/scale),gy=Math.min(gh-1,y/scale),x0=Math.floor(gx),y0=Math.floor(gy),x1=Math.min(gw-1,x0+1),y1=Math.min(gh-1,y0+1),fx=gx-x0,fy=gy-y0,local=(light[y0*gw+x0]*(1-fx)+light[y0*gw+x1]*fx)*(1-fy)+(light[y1*gw+x0]*(1-fx)+light[y1*gw+x1]*fx)*fy;let r=d[i],gg=d[i+1],b=d[i+2];
     if(filter!=="photo"){const correction=(235-local)*k;r+=correction;gg+=correction;b+=correction}
     let l=.299*r+.587*gg+.114*b;
     if(filter==="gray"||filter==="bw"||filter==="strong-bw"||filter==="ink")r=gg=b=l;
     if(filter==="bw"||filter==="strong-bw"||filter==="ink"){const threshold=filter==="strong-bw"?190:filter==="ink"?155:175;const soft=filter==="strong-bw"?18:32;l=255/(1+Math.exp(-(l-threshold)/soft));r=gg=b=l}
-    else if(filter==="auto"||filter==="color"||filter==="gray"){const c=filter==="color"?1.18:1.32;r=(r-128)*c+128;gg=(gg-128)*c+128;b=(b-128)*c+128;if(l>205){const lift=(255-l)*(.55*k);r+=lift;gg+=lift;b+=lift}}
+    else if(filter==="auto"||filter==="color"||filter==="gray"){const c=filter==="color"?1.16:1.28;r=(r-128)*c+128;gg=(gg-128)*c+128;b=(b-128)*c+128;l=.299*r+.587*gg+.114*b;if(l>188){const white=Math.min(.88,(l-188)/58)*k;r+=(255-r)*white;gg+=(255-gg)*white;b+=(255-b)*white}}
     else if(filter==="photo"){r=(r-128)*1.08+128;gg=(gg-128)*1.08+128;b=(b-128)*1.08+128}
     d[i]=Math.max(0,Math.min(255,r));d[i+1]=Math.max(0,Math.min(255,gg));d[i+2]=Math.max(0,Math.min(255,b));
   }
