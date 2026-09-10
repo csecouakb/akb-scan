@@ -130,9 +130,8 @@ function analyzeSubmissionFiles(fileUrls, options) {
     contents: [{ role: "user", parts: parts }],
     generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
   };
-  const response = UrlFetchApp.fetch(endpoint, {
-    method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true
-  });
+
+  const response = fetchGeminiWithRetry(endpoint, payload);
   const code = response.getResponseCode();
   const body = response.getContentText();
   if (code < 200 || code >= 300) throw new Error("Gemini HTTP " + code + ": " + body.slice(0, 500));
@@ -152,6 +151,30 @@ function analyzeSubmissionFiles(fileUrls, options) {
     text: options.extractText ? String(result.text || "") : "",
     subject: options.autoSubject ? String(result.subject || "") : ""
   };
+}
+
+function fetchGeminiWithRetry(endpoint, payload) {
+  const waits = [0, 2000, 5000];
+  let response;
+
+  for (let attempt = 0; attempt < waits.length; attempt++) {
+    if (waits[attempt] > 0) Utilities.sleep(waits[attempt]);
+
+    response = UrlFetchApp.fetch(endpoint, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    const code = response.getResponseCode();
+    const retryable = code === 429 || (code >= 500 && code <= 599);
+
+    if (!retryable) return response;
+    console.log("Gemini temporary HTTP " + code + ", attempt " + (attempt + 1) + " of " + waits.length);
+  }
+
+  return response;
 }
 
 function driveIdFromUrl(url) {
