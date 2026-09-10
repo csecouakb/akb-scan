@@ -22,6 +22,8 @@ function doPost(e) {
         sl, new Date(), body.reference, body.name, body.note || "", "", "",
         folder.getUrl(), "", optionLabel(options), "Receiving", ""
       ]);
+      const row = sheet.getLastRow();
+      formatSubmissionRow(sheet, row);
       return reply({ ok: true, folderId: folder.getId(), folderUrl: folder.getUrl() });
     }
 
@@ -56,6 +58,8 @@ function doPost(e) {
             console.log("AI processing skipped/failed: " + msg);
             sheet.getRange(row, 12).setValue(msg);
           }
+
+          formatSubmissionRow(sheet, row);
           return reply({ ok: true });
         }
       }
@@ -66,6 +70,13 @@ function doPost(e) {
   } catch (error) {
     return reply({ ok: false, error: String((error && error.message) || error) });
   }
+}
+
+function formatSubmissionRow(sheet, row) {
+  sheet.setRowHeight(row, 28);
+  [5, 6, 7, 9, 12].forEach(function(col) {
+    sheet.getRange(row, col).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  });
 }
 
 function normalizeOptions(o) {
