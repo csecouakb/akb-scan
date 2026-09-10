@@ -76,13 +76,15 @@ function doPost(e) {
 
 function formatSubmissionRow(sheet, row) {
   const range = sheet.getRange(row, 1, 1, 12);
+  range.setWrap(false);
   range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   range.setVerticalAlignment("middle");
-  sheet.setRowHeight(row, 28);
+  SpreadsheetApp.flush();
+  sheet.setRowHeightsForced(row, 1, 28);
 }
 
-// Run this manually once from Apps Script to make all existing response rows compact.
-// It only changes formatting. It does NOT alter any existing response data.
+// Run this manually once after pasting the latest code.
+// It forces every existing response row to stay at 28 px even when cells contain many line breaks.
 function fixOldResponses() {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("Responses");
   if (!sheet) throw new Error('Sheet "Responses" পাওয়া যায়নি');
@@ -92,14 +94,53 @@ function fixOldResponses() {
 
   const rowCount = lastRow - 1;
   const range = sheet.getRange(2, 1, rowCount, 12);
+
+  range.setWrap(false);
   range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   range.setVerticalAlignment("middle");
-  sheet.setRowHeights(2, rowCount, 28);
+  SpreadsheetApp.flush();
+
+  // Forced height is important. Normal setRowHeights can still expand when multiline text exists.
+  sheet.setRowHeightsForced(2, rowCount, 28);
   SpreadsheetApp.flush();
 }
 
-// Optional helper for old rows that were created while Subject/Text columns were reversed.
-// Set the row numbers first, then run manually. Do not run this for already-correct rows.
+// Run this once only if old rows have OCR text in Subject (col 6)
+// while Extracted Text (col 7) is empty or much shorter.
+// It uses a conservative rule so normal short subjects are not moved accidentally.
+function repairOldSubjectText() {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("Responses");
+  if (!sheet) throw new Error('Sheet "Responses" পাওয়া যায়নি');
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const count = lastRow - 1;
+  const range = sheet.getRange(2, 6, count, 2);
+  const values = range.getValues();
+  let changed = 0;
+
+  values.forEach(function(row) {
+    const col6 = String(row[0] || "").trim();
+    const col7 = String(row[1] || "").trim();
+
+    const col6LooksLikeOcr = col6.length >= 180 || col6.indexOf("\n") !== -1;
+    const col7MissingOrShort = !col7 || col7.length < 120;
+
+    if (col6LooksLikeOcr && col7MissingOrShort) {
+      row[1] = row[0];
+      row[0] = col7;
+      changed++;
+    }
+  });
+
+  if (changed) range.setValues(values);
+  SpreadsheetApp.flush();
+  fixOldResponses();
+  console.log("repairOldSubjectText changed rows: " + changed);
+}
+
+// Optional exact helper when you know the affected row numbers.
 function swapOldSubjectTextRows(startRow, endRow) {
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName("Responses");
   if (!sheet) throw new Error('Sheet "Responses" পাওয়া যায়নি');
@@ -122,10 +163,11 @@ function swapOldSubjectTextRows(startRow, endRow) {
 
   range.setValues(values);
   SpreadsheetApp.flush();
-
-  for (let row = startRow; row <= endRow; row++) {
-    formatSubmissionRow(sheet, row);
-  }
+  sheet.setRowHeightsForced(startRow, count, 28);
+  sheet.getRange(startRow, 1, count, 12)
+    .setWrap(false)
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+    .setVerticalAlignment("middle");
 }
 
 function normalizeOptions(o) {
