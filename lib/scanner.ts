@@ -39,7 +39,16 @@ export function perspectiveCorrect(source: HTMLCanvasElement, p: Point[]): HTMLC
   for(let i=0;i<4;i++){const x=dst[i].x,y=dst[i].y,u=p[i].x,v=p[i].y;A.push([x,y,1,0,0,0,-u*x,-u*y]);B.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);B.push(v)}
   const q=solve8(A,B), sctx=source.getContext("2d",{willReadFrequently:true})!, src=sctx.getImageData(0,0,source.width,source.height);
   const out=document.createElement("canvas"); out.width=w;out.height=h;const ctx=out.getContext("2d")!, im=ctx.createImageData(w,h);
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const z=q[6]*x+q[7]*y+1,sx=(q[0]*x+q[1]*y+q[2])/z,sy=(q[3]*x+q[4]*y+q[5])/z;const ix=Math.max(0,Math.min(source.width-1,Math.round(sx))),iy=Math.max(0,Math.min(source.height-1,Math.round(sy)));const si=(iy*source.width+ix)*4,di=(y*w+x)*4;im.data[di]=src.data[si];im.data[di+1]=src.data[si+1];im.data[di+2]=src.data[si+2];im.data[di+3]=255}
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const z=q[6]*x+q[7]*y+1,sx=Math.max(0,Math.min(source.width-1,(q[0]*x+q[1]*y+q[2])/z)),sy=Math.max(0,Math.min(source.height-1,(q[3]*x+q[4]*y+q[5])/z));
+    const x0=Math.floor(sx),y0=Math.floor(sy),x1=Math.min(source.width-1,x0+1),y1=Math.min(source.height-1,y0+1),fx=sx-x0,fy=sy-y0,di=(y*w+x)*4;
+    for(let channel=0;channel<3;channel++){
+      const a=src[(y0*source.width+x0)*4+channel]*(1-fx)+src[(y0*source.width+x1)*4+channel]*fx;
+      const b=src[(y1*source.width+x0)*4+channel]*(1-fx)+src[(y1*source.width+x1)*4+channel]*fx;
+      im.data[di+channel]=a*(1-fy)+b*fy;
+    }
+    im.data[di+3]=255;
+  }
   ctx.putImageData(im,0,0); return out;
 }
 
