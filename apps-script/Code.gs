@@ -49,8 +49,8 @@ function doPost(e) {
             const options = parseOptionLabel(String(values[i][9] || ""));
             if (options.extractText || options.autoSubject) {
               const result = analyzeSubmissionFiles(fileUrls, options);
-              if (result.text) sheet.getRange(row, 6).setValue(result.text);
-              if (result.subject) sheet.getRange(row, 7).setValue(result.subject);
+              if (result.subject) sheet.getRange(row, 6).setValue(result.subject);
+              if (result.text) sheet.getRange(row, 7).setValue(result.text);
               sheet.getRange(row, 12).setValue("AI OK");
             }
           } catch (aiError) {
