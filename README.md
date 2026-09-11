@@ -12,6 +12,8 @@ AKB Scan is an installable document-scanner PWA for mobile and desktop. The main
 - Optional AI/OCR page expressions such as `1`, `1-3`, and `1-3,5`
 - One Gemini `generateContent` request per submission, with no automatic retry
 - Installable PWA with cache-version cleanup
+- PIN-protected public scanner and owner-only `/admin` workspace
+- Durable admin-controlled 4 or 6 digit scanner PIN
 
 ## Local development
 
@@ -29,7 +31,7 @@ npm run build
 npm run lint
 ```
 
-No API key belongs in frontend code or Git. The core scanner does not need an API key.
+No API key belongs in frontend code or Git. The core scanner does not need an API key. Production uses `SCANNER_PIN` as the initial PIN, `SCANNER_ACCESS_TOKEN` as the session pepper, and `ADMIN_EMAIL` to allow the Site owner's ChatGPT account into `/admin`.
 
 ## Google Apps Script receiver
 
@@ -73,7 +75,7 @@ For a non-empty AI/OCR page expression, the browser renders only the chosen PDF 
 
 The site uses the configuration in `.openai/hosting.json`. Publish through the Sites workflow after a successful build. `public/sw.js` uses versioned caches, removes older caches during activation, never caches API requests, and uses network-first navigation so a stale HTML shell is less likely to keep old code active.
 
-The public sender route is `/submit`. Main-scanner access control is separate and can be tightened later without requiring senders to sign in.
+The public sender route is `/submit` and never requires sender sign-in. `/` requires the shared scanner PIN and does not expose the Cloud module. `/admin` requires the configured owner's ChatGPT sign-in; it contains PIN management and the Drive/Sheet Cloud module. A PIN change is stored in D1 and invalidates earlier scanner sessions.
 
 ## Architecture rule
 
