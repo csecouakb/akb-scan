@@ -1,4 +1,4 @@
-export type FilterName = "auto" | "original" | "color" | "gray" | "bw" | "strong-bw" | "ink" | "photo";
+export type FilterName = "auto" | "soft-copy" | "original" | "color" | "gray" | "bw" | "strong-bw" | "ink" | "photo";
 export type Point = { x: number; y: number };
 
 export const defaultCorners = (w: number, h: number): Point[] => [
@@ -11,7 +11,25 @@ export function orderCorners(points:Point[]):Point[]{
   const ordered=[at(sums,"min"),at(diffs,"max"),at(sums,"max"),at(diffs,"min")];
   return new Set(ordered).size===4?ordered.map(p=>({...p})):points;
 }
-export function detectDocumentCorners(canvas:HTMLCanvasElement):Point[]{const s=Math.min(1,700/Math.max(canvas.width,canvas.height)),w=Math.round(canvas.width*s),h=Math.round(canvas.height*s),c=imageToCanvas(canvas,w,h),d=c.getContext("2d",{willReadFrequently:true})!.getImageData(0,0,w,h).data,sx=new Float32Array(w),sy=new Float32Array(h);for(let y=2;y<h-2;y+=2)for(let x=2;x<w-2;x+=2){const i=(y*w+x)*4,j=i+8,k=((y+2)*w+x)*4,l=.299*d[i]+.587*d[i+1]+.114*d[i+2];sx[x]+=Math.abs(l-(.299*d[j]+.587*d[j+1]+.114*d[j+2]));sy[y]+=Math.abs(l-(.299*d[k]+.587*d[k+1]+.114*d[k+2]))}const best=(a:Float32Array,f:number,t:number)=>{let n=Math.floor(f);for(let i=Math.floor(f);i<Math.floor(t);i++)if(a[i]>a[n])n=i;return n},l=best(sx,w*.02,w*.35),r=best(sx,w*.65,w*.98),t=best(sy,h*.02,h*.35),b=best(sy,h*.65,h*.98);if(r-l<w*.35||b-t<h*.35)return defaultCorners(canvas.width,canvas.height);return[{x:l/s,y:t/s},{x:r/s,y:t/s},{x:r/s,y:b/s},{x:l/s,y:b/s}]}
+export function detectDocumentCorners(canvas:HTMLCanvasElement):Point[]{
+  const s=Math.min(1,800/Math.max(canvas.width,canvas.height)),w=Math.max(8,Math.round(canvas.width*s)),h=Math.max(8,Math.round(canvas.height*s));
+  const c=imageToCanvas(canvas,w,h),data=c.getContext("2d",{willReadFrequently:true})!.getImageData(0,0,w,h).data,gray=new Float32Array(w*h);
+  for(let i=0,p=0;i<data.length;i+=4,p++)gray[p]=.299*data[i]+.587*data[i+1]+.114*data[i+2];
+  type Sample={a:number;b:number;score:number};
+  const vertical:Sample[]=[],horizontal:Sample[]=[];
+  // Collect the strongest paper/background transition in each scan line. Keeping
+  // many local samples lets tilted and perspective-skewed edges win over text.
+  for(let y=3;y<h-3;y+=3)for(const [from,to,side] of [[.015,.48,-1],[.52,.985,1]] as const){let bx=Math.round(w*from),score=0;for(let x=Math.max(3,bx);x<Math.min(w-3,Math.round(w*to));x++){const g=Math.abs(gray[y*w+x+2]-gray[y*w+x-2]);if(g>score){score=g;bx=x}}if(score>10)vertical.push({a:y,b:bx,score:score+(side<0?(w-bx):bx)/w})}
+  for(let x=3;x<w-3;x+=3)for(const [from,to,side] of [[.015,.48,-1],[.52,.985,1]] as const){let by=Math.round(h*from),score=0;for(let y=Math.max(3,by);y<Math.min(h-3,Math.round(h*to));y++){const g=Math.abs(gray[(y+2)*w+x]-gray[(y-2)*w+x]);if(g>score){score=g;by=y}}if(score>10)horizontal.push({a:x,b:by,score:score+(side<0?(h-by):by)/h})}
+  const fit=(samples:Sample[],low:boolean,extent:number)=>{const chosen=samples.filter(q=>low?q.b<extent*.5:q.b>=extent*.5).sort((a,b)=>b.score-a.score).slice(0,Math.max(12,Math.floor(samples.length*.18)));if(chosen.length<8)return null;let sa=0,sb=0,saa=0,sab=0;for(const q of chosen){sa+=q.a;sb+=q.b;saa+=q.a*q.a;sab+=q.a*q.b}const den=chosen.length*saa-sa*sa;if(Math.abs(den)<1)return null;const m=(chosen.length*sab-sa*sb)/den;return {m,k:(sb-m*sa)/chosen.length}}
+  const left=fit(vertical,true,w),right=fit(vertical,false,w),top=fit(horizontal,true,h),bottom=fit(horizontal,false,h);
+  if(!left||!right||!top||!bottom)return defaultCorners(canvas.width,canvas.height);
+  const cross=(v:{m:number;k:number},q:{m:number;k:number})=>{const den=1-q.m*v.m;if(Math.abs(den)<.05)return null;const y=(q.m*v.k+q.k)/den;return {x:(v.m*y+v.k)/s,y:y/s}};
+  const result=[cross(left,top),cross(right,top),cross(right,bottom),cross(left,bottom)];
+  if(result.some(p=>!p))return defaultCorners(canvas.width,canvas.height);const points=result as Point[],area=Math.abs(points.reduce((sum,p,i)=>sum+p.x*points[(i+1)%4].y-points[(i+1)%4].x*p.y,0))/2;
+  if(area<canvas.width*canvas.height*.18||points.some(p=>p.x<0||p.y<0||p.x>canvas.width||p.y>canvas.height))return defaultCorners(canvas.width,canvas.height);
+  return orderCorners(points);
+}
 
 export async function fileToImage(file: Blob): Promise<HTMLImageElement> {
   const url = URL.createObjectURL(file);
@@ -60,6 +78,7 @@ export function enhance(source: HTMLCanvasElement, filter: FilterName, strength=
     let l=.299*r+.587*gg+.114*b;
     if(filter==="gray"||filter==="bw"||filter==="strong-bw"||filter==="ink")r=gg=b=l;
     if(filter==="bw"||filter==="strong-bw"||filter==="ink"){const threshold=filter==="strong-bw"?190:filter==="ink"?155:175;const soft=filter==="strong-bw"?18:32;l=255/(1+Math.exp(-(l-threshold)/soft));r=gg=b=l}
+    else if(filter==="soft-copy"){const base=Math.max(45,local),normalized=Math.max(0,Math.min(255,l/base*244)),clean=(normalized-128)*1.18+128,chroma=Math.max(r,gg,b)-Math.min(r,gg,b),keep=chroma>28?.9:.48;r=clean+(r-l)*keep;gg=clean+(gg-l)*keep;b=clean+(b-l)*keep;if(clean>174){const white=Math.min(.96,(clean-174)/62);r+=(255-r)*white;gg+=(255-gg)*white;b+=(255-b)*white}}
     else if(filter==="auto"||filter==="color"||filter==="gray"){const c=filter==="color"?1.16:1.28;r=(r-128)*c+128;gg=(gg-128)*c+128;b=(b-128)*c+128;l=.299*r+.587*gg+.114*b;if(l>188){const white=Math.min(.88,(l-188)/58)*k;r+=(255-r)*white;gg+=(255-gg)*white;b+=(255-b)*white}}
     else if(filter==="photo"){r=(r-128)*1.08+128;gg=(gg-128)*1.08+128;b=(b-128)*1.08+128}
     d[i]=Math.max(0,Math.min(255,r));d[i+1]=Math.max(0,Math.min(255,gg));d[i+2]=Math.max(0,Math.min(255,b));
