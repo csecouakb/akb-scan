@@ -11,6 +11,7 @@ AKB Scan is an installable document-scanner PWA for mobile and desktop. The main
 - Original-preserving clean copies
 - Optional AI/OCR page expressions such as `1`, `1-3`, and `1-3,5`
 - One Gemini `generateContent` request per submission, with no automatic retry
+- Existing document subjects are copied faithfully; a new subject is generated only when the document has no subject heading
 - Installable PWA with cache-version cleanup
 - PIN-protected public scanner and owner-only `/admin` workspace
 - Durable admin-controlled 4 or 6 digit scanner PIN
