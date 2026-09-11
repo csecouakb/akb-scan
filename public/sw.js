@@ -1,4 +1,4 @@
-const CACHE="akb-scan-v3",SHELL=["/","/submit","/manifest.webmanifest","/favicon.svg","/pdf.worker.min.mjs"];
+const CACHE="akb-scan-v4",SHELL=["/unlock","/submit","/manifest.webmanifest","/favicon.svg","/pdf.worker.min.mjs"];
 self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener("message",e=>{if(e.data==="SKIP_WAITING")self.skipWaiting()});
