@@ -1,5 +1,3 @@
-import { env } from "cloudflare:workers";
-
 const PIN_KEY = "scanner_pin_hash";
 
 async function digest(value: string) {
@@ -14,11 +12,6 @@ async function hashPin(pin: string) {
 }
 
 export async function currentPinHash() {
-  const db = env.DB;
-  if (db) {
-    const row = await db.prepare("SELECT value FROM app_settings WHERE key = ?").bind(PIN_KEY).first<{ value: string }>();
-    if (row?.value) return row.value;
-  }
   if (!process.env.SCANNER_PIN) throw new Error("Scanner PIN is not configured");
   return hashPin(process.env.SCANNER_PIN);
 }
@@ -33,11 +26,8 @@ export async function scannerSessionToken() {
   return digest(`akb-scan-session:${secret}:${await currentPinHash()}`);
 }
 
-export async function changeScannerPin(pin: string) {
-  if (!env.DB) throw new Error("Settings database is unavailable");
-  const value = await hashPin(pin);
-  await env.DB.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
-    .bind(PIN_KEY, value, Date.now()).run();
+export async function changeScannerPin(_pin: string) {
+  throw new Error("Netlify deployment uses the SCANNER_PIN environment variable. Change the PIN from Netlify environment variables and redeploy.");
 }
 
 export function isAdminEmail(email?: string | null) {
